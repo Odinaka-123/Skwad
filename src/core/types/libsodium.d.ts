@@ -1,5 +1,5 @@
 declare module "libsodium-wrappers-sumo" {
-  interface Sodium {
+  export interface Sodium {
     ready: Promise<void>;
 
     crypto_sign_keypair(): {
@@ -26,6 +26,25 @@ declare module "libsodium-wrappers-sumo" {
       nonce: Uint8Array,
       key: Uint8Array
     ): Uint8Array;
+
+    /* ---------- Key Exchange ---------- */
+    crypto_kx_client_session_keys(
+      client_pk: Uint8Array,
+      client_sk: Uint8Array,
+      server_pk: Uint8Array
+    ): {
+      sharedRx: Uint8Array;
+      sharedTx: Uint8Array;
+    };
+
+    crypto_kx_server_session_keys(
+      server_pk: Uint8Array,
+      server_sk: Uint8Array,
+      client_pk: Uint8Array
+    ): {
+      sharedRx: Uint8Array;
+      sharedTx: Uint8Array;
+    };
   }
 
   const sodium: Sodium;
