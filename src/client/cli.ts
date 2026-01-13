@@ -1,5 +1,5 @@
-import { loadOrCreateIdentity, deviceCode } from "../crypto/identity.js";
-import { createSkwad, encryptMessage, decryptMessage } from "../protocol/skwad.js";
+import { loadOrCreateIdentity, deviceCode } from "../core/crypto/identity.js";
+import { createSkwad, encryptMessage, decryptMessage } from "../core/protocol/skwad.js"
 
 
 async function main() {
