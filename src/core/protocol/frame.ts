@@ -26,6 +26,9 @@ export class SecureFrame {
     return nonce;
   }
 
+  /* =========================
+     ENCRYPT
+  ========================= */
   encrypt(payload: Uint8Array): Uint8Array {
     const counter = this.sendCounter++;
     const nonce = this.makeNonce(counter);
@@ -49,6 +52,9 @@ export class SecureFrame {
     return frame;
   }
 
+  /* =========================
+     DECRYPT
+  ========================= */
   decrypt(frame: Uint8Array): Uint8Array {
     const view = new DataView(frame.buffer);
     const counter = view.getBigUint64(0, false);
