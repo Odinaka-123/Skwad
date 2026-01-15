@@ -3,45 +3,36 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { dirname } from "path";
-import { ed25519PkToCurve25519, ed25519SkToCurve25519 } from "./convert.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// Identity file path
+import { ed25519PkToCurve25519, ed25519SkToCurve25519 } from "./convert.js";
+
 function identityFile(profile: string) {
   return path.join(__dirname, `device_identity_${profile}.json`);
 }
 
 export interface Identity {
-  publicKeyEd: string; // hex
-  privateKeyEd: string; // hex
-  publicKeyX: string; // hex
-  privateKeyX: string; // hex
+  publicKeyEd: string;   // 32 bytes
+  privateKeyEd: string;  // 64 bytes
   createdAt: number;
   profile: string;
 }
 
-// Load or create identity
 export async function loadOrCreateIdentity(profile = "default"): Promise<Identity> {
   await sodium.ready;
-
   const FILE = identityFile(profile);
 
   if (fs.existsSync(FILE)) {
     return JSON.parse(fs.readFileSync(FILE, "utf8"));
   }
 
-  const keypair = sodium.crypto_sign_keypair();
-
-  const pubX = ed25519PkToCurve25519(keypair.publicKey);
-  const skX = ed25519SkToCurve25519(keypair.privateKey);
+  const keypair = sodium.crypto_sign_keypair(); // Ed25519 keys
 
   const identity: Identity = {
     publicKeyEd: Buffer.from(keypair.publicKey).toString("hex"),
-    privateKeyEd: Buffer.from(keypair.privateKey).toString("hex"),
-    publicKeyX: Buffer.from(pubX).toString("hex"),
-    privateKeyX: Buffer.from(skX).toString("hex"),
+    privateKeyEd: Buffer.from(keypair.privateKey).toString("hex"), // FULL 64 bytes!
     createdAt: Date.now(),
     profile,
   };

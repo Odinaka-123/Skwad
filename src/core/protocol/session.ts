@@ -1,47 +1,39 @@
 import sodium from "libsodium-wrappers-sumo";
 
-export interface SessionKeys {
-  sendKey: Uint8Array;
-  receiveKey: Uint8Array;
-}
-export async function createClientSession(
-  myPublicKey: Uint8Array,
-  myPrivateKey: Uint8Array,
-  peerPublicKey: Uint8Array
-): Promise<SessionKeys> {
+/**
+ * SERVER SIDE
+ */
+export async function createServerSession(
+  myPublicX: Uint8Array,
+  mySecretX: Uint8Array,
+  peerPublicX: Uint8Array
+) {
   await sodium.ready;
 
-  const { sharedTx, sharedRx } = sodium.crypto_kx_client_session_keys(
-    myPublicKey,
-    myPrivateKey,
-    peerPublicKey
+  const { sharedRx, sharedTx } = sodium.crypto_kx_server_session_keys(
+    myPublicX,
+    mySecretX,
+    peerPublicX
   );
 
-  return {
-    sendKey: sharedTx,
-    receiveKey: sharedRx
-  };
+  return { sendKey: sharedTx, receiveKey: sharedRx };
 }
 
 /**
- * Server-side session key derivation
- * (responder)
+ * CLIENT SIDE
  */
-export async function createServerSession(
-  myPublicKey: Uint8Array,
-  myPrivateKey: Uint8Array,
-  peerPublicKey: Uint8Array
-): Promise<SessionKeys> {
+export async function createClientSession(
+  myPublicX: Uint8Array,
+  mySecretX: Uint8Array,
+  serverPublicX: Uint8Array
+) {
   await sodium.ready;
 
-  const { sharedTx, sharedRx } = sodium.crypto_kx_server_session_keys(
-    myPublicKey,
-    myPrivateKey,
-    peerPublicKey
+  const { sharedRx, sharedTx } = sodium.crypto_kx_client_session_keys(
+    myPublicX,
+    mySecretX,
+    serverPublicX
   );
 
-  return {
-    sendKey: sharedRx,
-    receiveKey: sharedTx
-  };
+  return { sendKey: sharedTx, receiveKey: sharedRx };
 }
