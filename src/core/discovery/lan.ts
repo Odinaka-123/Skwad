@@ -1,13 +1,14 @@
 import dgram from "dgram";
 
-export const DISCOVERY_PORT = 45454;
+export const DISCOVERY_PORT = 45460; // 🚫 NOT TCP PORT
 export const DISCOVERY_INTERVAL_MS = 2500;
+export const MULTICAST_ADDR = "239.255.0.1";
 
 export interface LanDiscoveryIdentity {
   skwadId: string;
   deviceCode: string;
   publicKeyHex: string;
-  port: number;
+  tcpPort: number;
 }
 
 export interface DiscoveredPeer extends LanDiscoveryIdentity {
@@ -18,40 +19,45 @@ export function startLanDiscovery(
   identity: LanDiscoveryIdentity,
   onPeerDiscovered: (peer: DiscoveredPeer) => void
 ) {
-  const socket = dgram.createSocket("udp4");
-  const discoveredPeers = new Set<string>();
-
-  // Bind the socket
-  socket.bind(DISCOVERY_PORT, () => {
-    socket.setBroadcast(true);
-    identity.port = DISCOVERY_PORT; // update identity with actual port
-    console.log("📡 LAN discovery started");
+  const socket = dgram.createSocket({
+    type: "udp4",
+    reuseAddr: true, // REQUIRED on Windows
   });
 
-  // Listen for discovery packets
+  const seenDevices = new Set<string>();
+
+  socket.on("listening", () => {
+    const addr = socket.address();
+    console.log(`📡 LAN discovery started on ${addr.address}:${addr.port}`);
+    socket.addMembership(MULTICAST_ADDR);
+    socket.setMulticastLoopback(true); // allow same-machine discovery
+  });
+
+  socket.bind(DISCOVERY_PORT);
+
   socket.on("message", (msg, rinfo) => {
     try {
       const data = JSON.parse(msg.toString());
 
       if (data.type !== "skwad-discovery") return;
-      if (data.skwadId === identity.skwadId) return; // ignore self
-      if (discoveredPeers.has(data.skwadId)) return; // already discovered
+      if (data.skwadId !== identity.skwadId) return;
+      if (data.deviceCode === identity.deviceCode) return;
+      if (seenDevices.has(data.deviceCode)) return;
 
-      discoveredPeers.add(data.skwadId);
+      seenDevices.add(data.deviceCode);
 
       onPeerDiscovered({
         skwadId: data.skwadId,
         deviceCode: data.deviceCode,
         publicKeyHex: data.publicKeyHex,
-        port: data.port,
+        tcpPort: data.tcpPort,
         ip: rinfo.address,
       });
     } catch {
-      // ignore malformed packets
+      // ignore
     }
   });
 
-  // Broadcast presence periodically
   const interval = setInterval(() => {
     const payload = Buffer.from(
       JSON.stringify({
@@ -59,14 +65,13 @@ export function startLanDiscovery(
         skwadId: identity.skwadId,
         deviceCode: identity.deviceCode,
         publicKeyHex: identity.publicKeyHex,
-        port: identity.port,
+        tcpPort: identity.tcpPort,
       })
     );
 
-    socket.send(payload, 0, payload.length, DISCOVERY_PORT, "255.255.255.255");
+    socket.send(payload, 0, payload.length, DISCOVERY_PORT, MULTICAST_ADDR);
   }, DISCOVERY_INTERVAL_MS);
 
-  // Cleanup function
   return () => {
     clearInterval(interval);
     socket.close();

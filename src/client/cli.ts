@@ -1,79 +1,61 @@
-import { loadOrCreateIdentity, deviceCode } from "../core/crypto/identity.js";
-import { createSkwad, createSkwadSession } from "../core/protocol/skwad.js";
-import { addPeer, listPeers } from "../core/crypto/peers.js";
-import {
-  createPairingRequest,
-  acceptPairingRequest,
-  finalizePairing,
-} from "../core/protocol/pairing.js";
 import sodium from "libsodium-wrappers-sumo";
-import { startLanDiscovery, DISCOVERY_PORT } from "../core/discovery/lan.js";
+import { loadOrCreateIdentity, deviceCode } from "../core/crypto/identity.js";
+import { startTcpServer } from "../net/tcp/server.js";
+import { connectToPeer } from "../net/tcp/client.js";
+import { startLanDiscovery } from "../core/discovery/lan.js";
 
+/* ====== CLI args ====== */
+function getArg(name: string) {
+  const idx = process.argv.indexOf(name);
+  return idx !== -1 ? process.argv[idx + 1] : undefined;
+}
+
+const PROFILE = getArg("--profile") ?? "default";
+const SKWAD_ID = getArg("--skwad") ?? "default";
+const TCP_PORT = Number(getArg("--port") ?? 45454);
+
+/* ====== MAIN ====== */
 async function main() {
   await sodium.ready;
+  const identity = await loadOrCreateIdentity(PROFILE);
 
-  const identity = await loadOrCreateIdentity();
-  console.log("Your Device Code:", deviceCode(identity.publicKey));
+  console.log("🟢 Skwad ID:", SKWAD_ID);
+  console.log("🆔 Device Code:", deviceCode(identity.publicKeyX));
+  console.log(`🔌 TCP server will listen on ${TCP_PORT}`);
 
-  const skwad = await createSkwad();
-  console.log("Created Skwad ID:", skwad.skwadId);
+  // TCP server
+  startTcpServer(TCP_PORT, {
+    publicKey: Uint8Array.from(Buffer.from(identity.publicKeyX, "hex")),
+    privateKey: Uint8Array.from(Buffer.from(identity.privateKeyX, "hex")),
+  });
 
-  // ===== Secure session test (DIRECTIONAL) =====
-  const sessionA = await createSkwadSession(skwad.skwadSecret, "initiator");
-  const sessionB = await createSkwadSession(skwad.skwadSecret, "responder");
+  const seen = new Set<string>();
 
-  const wire = sessionA.send("Hello Skwad 👋");
-  const receivedBuffer = sessionB.receive(wire);
-
-  let received: string;
-  if (typeof receivedBuffer === "string") {
-    received = receivedBuffer;
-  } else {
-    received = new TextDecoder().decode(receivedBuffer as Uint8Array);
-  }
-  console.log("Session decrypted:", received);
-
-  // ===== Peer logic =====
-  const fakeKey = "a1b2c3d4e5f6".repeat(5);
-  try {
-    const peer = addPeer(fakeKey);
-    console.log("Added peer:", peer);
-  } catch {
-    console.log("Peer already trusted (skipping)");
-  }
-  console.log("Trusted peers:", listPeers());
-
-  // ===== Pairing =====
-  const req = await createPairingRequest(identity.publicKey);
-  const res = await acceptPairingRequest(req, identity.publicKey);
-  await finalizePairing(res);
-  console.log("Pairing complete");
-
-  // ===== LAN Discovery =====
-  const discoveredPeers = new Set<string>();
+  // LAN discovery
   const stopDiscovery = startLanDiscovery(
     {
-      skwadId: skwad.skwadId,
-      deviceCode: deviceCode(identity.publicKey),
-      publicKeyHex: Buffer.from(identity.publicKey).toString("hex"),
-      port: DISCOVERY_PORT,
+      skwadId: SKWAD_ID,
+      deviceCode: deviceCode(identity.publicKeyX),
+      publicKeyHex: identity.publicKeyX,
+      tcpPort: TCP_PORT,
     },
     (peer) => {
-      if (discoveredPeers.has(peer.skwadId)) return; // ignore duplicates
-      discoveredPeers.add(peer.skwadId);
+      if (peer.publicKeyHex === identity.publicKeyX || seen.has(peer.publicKeyHex)) return;
+      seen.add(peer.publicKeyHex);
 
-      console.log("🔍 LAN peer discovered:", {
-        ip: peer.ip,
-        skwadId: peer.skwadId,
-        deviceCode: peer.deviceCode,
+      console.log("🔍 LAN peer discovered:", peer);
+
+      connectToPeer(peer.ip, peer.tcpPort, {
+        publicKey: Uint8Array.from(Buffer.from(identity.publicKeyX, "hex")),
+        privateKey: Uint8Array.from(Buffer.from(identity.privateKeyX, "hex")),
       });
     }
   );
 
-  // Stop discovery cleanly on exit
   process.on("SIGINT", () => {
     stopDiscovery();
-    process.exit();
+    console.log("🛑 Exiting...");
+    process.exit(0);
   });
 }
 
