@@ -15,6 +15,16 @@ export interface DiscoveredPeer extends LanDiscoveryIdentity {
   ip: string;
 }
 
+/**
+ * In-memory cache of discovered peers
+ * Allows late-joining clients (mobile) to receive peers
+ */
+const discoveredPeers = new Map<string, DiscoveredPeer>();
+
+export function getDiscoveredPeers(): DiscoveredPeer[] {
+  return Array.from(discoveredPeers.values());
+}
+
 export function startLanDiscovery(
   identity: LanDiscoveryIdentity,
   onPeerDiscovered: (peer: DiscoveredPeer) => void
@@ -23,8 +33,6 @@ export function startLanDiscovery(
     type: "udp4",
     reuseAddr: true, // REQUIRED on Windows
   });
-
-  const seenDevices = new Set<string>();
 
   socket.on("listening", () => {
     const addr = socket.address();
@@ -42,19 +50,24 @@ export function startLanDiscovery(
       if (data.type !== "skwad-discovery") return;
       if (data.skwadId !== identity.skwadId) return;
       if (data.deviceCode === identity.deviceCode) return;
-      if (seenDevices.has(data.deviceCode)) return;
 
-      seenDevices.add(data.deviceCode);
+      if (discoveredPeers.has(data.deviceCode)) return;
 
-      onPeerDiscovered({
+      const peer: DiscoveredPeer = {
         skwadId: data.skwadId,
         deviceCode: data.deviceCode,
         publicKeyHex: data.publicKeyHex,
         tcpPort: data.tcpPort,
         ip: rinfo.address,
-      });
+      };
+
+      discoveredPeers.set(peer.deviceCode, peer);
+
+      console.log(`🔍 LAN peer discovered: ${peer.deviceCode} @ ${peer.ip}`);
+
+      onPeerDiscovered(peer);
     } catch {
-      // ignore
+      // ignore malformed packets
     }
   });
 
@@ -75,6 +88,7 @@ export function startLanDiscovery(
   return () => {
     clearInterval(interval);
     socket.close();
+    discoveredPeers.clear();
     console.log("🛑 LAN discovery stopped");
   };
 }
